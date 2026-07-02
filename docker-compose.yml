@@ -1,0 +1,24 @@
+services:
+  backend:
+    build: ./backend          # Construit l'image depuis ./backend/Dockerfile
+    container_name: hand-sign-backend
+    ports:
+      - "5000:5000"           # Port host:container — accès via http://localhost:5000
+    volumes:
+      # Ces dossiers sont montés depuis ta machine dans le container.
+      # Les données collectées et le modèle entraîné persistent même si
+      # tu redémarres ou rebuildes le container.
+      - ./data:/app/data
+      - ./model:/app/model
+    environment:
+      - PYTHONUNBUFFERED=1    # Les logs Python apparaissent immédiatement
+
+  frontend:
+    image: nginx:alpine       # Serveur web ultra-léger pour servir le HTML
+    container_name: hand-sign-frontend
+    ports:
+      - "8080:80"             # Interface dispo sur http://localhost:8080
+    volumes:
+      - ./frontend:/usr/share/nginx/html:ro   # Monte le dossier frontend en lecture seule
+    depends_on:
+      - backend               # Frontend démarre après le backend

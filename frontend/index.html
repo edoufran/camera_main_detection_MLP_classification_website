@@ -1,0 +1,816 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hand Sign Detector</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --surface: #1a1d27;
+    --surface2: #252335;
+    --border: #2e3248;
+    --accent: #6c63ff;
+    --accent2: #a78bfa;
+    --green: #22d3a5;
+    --red: #ff5e7e;
+    --yellow: #fbbf24;
+    --text: #e8eaf6;
+    --muted: #8b93b8;
+    --radius: 12px;
+    --font: 'Inter', system-ui, sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  header {
+    padding: 20px 32px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  header .logo {
+    width: 36px; height: 36px;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px;
+  }
+
+  header h1 { font-size: 1.1rem; font-weight: 600; letter-spacing: -0.02em; }
+  header .subtitle { color: var(--muted); font-size: 0.8rem; margin-left: auto; }
+
+  #status-banner {
+    background: var(--surface2);
+    border-bottom: 1px solid var(--border);
+    padding: 8px 32px;
+    font-size: 0.78rem;
+    color: var(--muted);
+    display: flex; align-items: center; gap: 8px;
+  }
+  #status-banner .dot {
+    width: 7px; height: 7px; border-radius: 50%; background: var(--muted);
+    transition: background 0.3s;
+  }
+  #status-banner .dot.online { background: var(--green); }
+
+  .layout {
+    display: grid;
+    grid-template-columns: 1fr 340px;
+    gap: 0;
+    flex: 1;
+    overflow: hidden;
+  }
+
+  /* ── LEFT PANEL : webcam ── */
+  .cam-zone {
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    border-right: 1px solid var(--border);
+  }
+
+  .video-wrapper {
+    position: relative;
+    background: #000;
+    border-radius: var(--radius);
+    overflow: hidden;
+    border: 1px solid var(--border);
+    aspect-ratio: 4/3;
+    max-height: 420px;
+  }
+
+  #webcam {
+    width: 100%; height: 100%;
+    object-fit: cover;
+    display: block;
+    transform: scaleX(-1); /* mirror effect */
+  }
+
+  #canvas-overlay {
+    position: absolute; inset: 0;
+    width: 100%; height: 100%;
+    transform: scaleX(-1);
+    pointer-events: none;
+  }
+
+  .prediction-overlay {
+    position: absolute; bottom: 0; left: 0; right: 0;
+    background: linear-gradient(transparent, rgba(0,0,0,0.85));
+    padding: 24px 16px 14px;
+    display: flex; align-items: flex-end; gap: 12px;
+  }
+
+  #pred-sign {
+    font-size: 2rem; font-weight: 700; letter-spacing: -0.03em;
+    color: #fff; line-height: 1;
+    text-transform: uppercase;
+  }
+
+  #pred-conf {
+    font-size: 0.85rem; color: var(--accent2); font-weight: 500;
+  }
+
+  #hand-badge {
+    position: absolute; top: 12px; right: 12px;
+    background: rgba(0,0,0,0.6);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 4px 10px;
+    font-size: 0.72rem; color: var(--muted);
+    backdrop-filter: blur(4px);
+  }
+  #hand-badge.detected { color: var(--green); border-color: var(--green); }
+
+  .cam-controls { display: flex; gap: 10px; flex-wrap: wrap; }
+
+  /* ── RIGHT PANEL : tabs ── */
+  .panel {
+    display: flex; flex-direction: column;
+    overflow: hidden;
+  }
+
+  .tabs {
+    display: flex;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .tab-btn {
+    flex: 1; padding: 14px 8px;
+    background: none; border: none; cursor: pointer;
+    font-size: 0.78rem; font-weight: 500;
+    color: var(--muted);
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    transition: color 0.2s, border-color 0.2s;
+    letter-spacing: 0.03em; text-transform: uppercase;
+  }
+  .tab-btn.active {
+    color: var(--accent2);
+    border-bottom-color: var(--accent2);
+  }
+
+  .tab-content { display: none; flex: 1; overflow-y: auto; padding: 20px; }
+  .tab-content.active { display: flex; flex-direction: column; gap: 16px; }
+
+  /* ── Shared components ── */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px;
+  }
+
+  .card h3 {
+    font-size: 0.78rem; font-weight: 600;
+    color: var(--muted); text-transform: uppercase;
+    letter-spacing: 0.06em; margin-bottom: 12px;
+  }
+
+  button {
+    background: var(--accent);
+    color: #fff;
+    border: none; cursor: pointer;
+    padding: 10px 18px;
+    border-radius: 8px;
+    font-size: 0.85rem; font-weight: 500;
+    transition: opacity 0.15s, transform 0.1s;
+    white-space: nowrap;
+  }
+  button:hover { opacity: 0.85; }
+  button:active { transform: scale(0.97); }
+  button:disabled { opacity: 0.35; cursor: not-allowed; transform: none; }
+  button.danger { background: var(--red); }
+  button.secondary {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text);
+  }
+  button.green { background: var(--green); color: #0f1117; }
+
+  select, input[type="text"] {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    padding: 9px 12px;
+    font-size: 0.85rem;
+    width: 100%;
+    appearance: none;
+  }
+
+  label { font-size: 0.8rem; color: var(--muted); margin-bottom: 4px; display: block; }
+
+  .progress-bar-wrap {
+    height: 6px; background: var(--surface2);
+    border-radius: 4px; overflow: hidden;
+  }
+  .progress-bar-fill {
+    height: 100%; background: var(--accent);
+    border-radius: 4px; transition: width 0.3s;
+    width: 0%;
+  }
+
+  .stat-row {
+    display: flex; justify-content: space-between;
+    align-items: center; font-size: 0.83rem;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .stat-row:last-child { border-bottom: none; }
+  .stat-row .val { color: var(--accent2); font-weight: 600; font-variant-numeric: tabular-nums; }
+
+  .sign-chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 4px 10px;
+    font-size: 0.78rem;
+    cursor: pointer;
+    transition: border-color 0.15s;
+  }
+  .sign-chip:hover { border-color: var(--accent); }
+  .sign-chip.selected { border-color: var(--accent); color: var(--accent2); }
+  .sign-chip .remove { color: var(--muted); font-size: 1rem; line-height: 1; }
+
+  .log-box {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px;
+    font-size: 0.75rem;
+    font-family: 'Fira Code', 'Courier New', monospace;
+    color: var(--muted);
+    max-height: 160px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+  }
+
+  .metric-grid {
+    display: grid; grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  .metric-box {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-size: 0.75rem; color: var(--muted);
+  }
+  .metric-box .val { font-size: 1.2rem; font-weight: 700; color: var(--text); display: block; margin-top: 2px; }
+
+  .big-accuracy {
+    font-size: 3rem; font-weight: 800;
+    color: var(--green); text-align: center; padding: 8px 0;
+    letter-spacing: -0.04em;
+  }
+
+  .collecting-indicator {
+    display: none;
+    align-items: center; gap: 8px;
+    background: rgba(108, 99, 255, 0.15);
+    border: 1px solid var(--accent);
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-size: 0.83rem;
+    color: var(--accent2);
+  }
+  .collecting-indicator.active { display: flex; }
+  .pulse {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--accent);
+    animation: pulse 1s infinite;
+  }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+  .proba-list { display: flex; flex-direction: column; gap: 6px; }
+  .proba-row { display: flex; flex-direction: column; gap: 3px; }
+  .proba-label { display: flex; justify-content: space-between; font-size: 0.76rem; }
+  .proba-label .name { color: var(--muted); }
+  .proba-label .pct { color: var(--accent2); font-variant-numeric: tabular-nums; }
+
+  @media (max-width: 800px) {
+    .layout { grid-template-columns: 1fr; }
+    .cam-zone { border-right: none; border-bottom: 1px solid var(--border); }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">✋</div>
+  <h1>Hand Sign Detector</h1>
+  <span class="subtitle">MediaPipe + MLP</span>
+</header>
+
+<div id="status-banner">
+  <span class="dot" id="api-dot"></span>
+  <span id="api-status">Connexion au backend...</span>
+</div>
+
+<div class="layout">
+
+  <!-- LEFT: Webcam -->
+  <div class="cam-zone">
+    <div class="video-wrapper">
+      <video id="webcam" autoplay muted playsinline></video>
+      <canvas id="canvas-overlay"></canvas>
+      <div id="hand-badge">Aucune main</div>
+      <div class="prediction-overlay">
+        <div>
+          <div id="pred-sign">—</div>
+          <div id="pred-conf"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="cam-controls">
+      <button id="btn-start-cam">📷 Démarrer la caméra</button>
+      <button id="btn-stop-cam" class="secondary" disabled>⏹ Arrêter</button>
+    </div>
+
+    <!-- Live probabilities -->
+    <div class="card" id="proba-card" style="display:none">
+      <h3>Probabilités en direct</h3>
+      <div class="proba-list" id="proba-list"></div>
+    </div>
+  </div>
+
+  <!-- RIGHT: Tabs -->
+  <div class="panel">
+    <div class="tabs">
+      <button class="tab-btn active" data-tab="collect">Collecter</button>
+      <button class="tab-btn" data-tab="train">Entraîner</button>
+      <button class="tab-btn" data-tab="predict">Prédire</button>
+    </div>
+
+    <!-- TAB: Collect -->
+    <div class="tab-content active" id="tab-collect">
+      <div class="card">
+        <h3>Signes disponibles</h3>
+        <div id="signs-chips" style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px;"></div>
+        <div style="display:flex;gap:8px;margin-top:8px;">
+          <input type="text" id="new-sign-input" placeholder="Nouveau signe..." style="flex:1"/>
+          <button id="btn-add-sign" class="secondary">+ Ajouter</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Signe sélectionné</h3>
+        <div style="display:flex;flex-direction:column;gap:10px;">
+          <label>Faire ce signe devant la caméra, puis cliquer Capturer</label>
+          <div id="selected-sign-display" style="font-size:1.4rem;font-weight:700;color:var(--accent2);min-height:32px;">—</div>
+
+          <div class="collecting-indicator" id="collecting-indicator">
+            <div class="pulse"></div>
+            <span id="collect-status-text">Capture en cours...</span>
+          </div>
+
+          <div>
+            <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
+              <span style="font-size:0.78rem;color:var(--muted)">Progression</span>
+              <span id="collect-count-label" style="font-size:0.78rem;color:var(--accent2)">0 / 50</span>
+            </div>
+            <div class="progress-bar-wrap">
+              <div class="progress-bar-fill" id="collect-progress"></div>
+            </div>
+          </div>
+
+          <div style="display:flex;gap:8px;">
+            <button id="btn-collect-start" disabled>▶ Capturer 50 exemples</button>
+            <button id="btn-collect-stop" class="secondary" disabled>⏹ Stop</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Données collectées</h3>
+        <div id="data-stats">
+          <div class="stat-row"><span>Total</span><span class="val" id="stat-total">0</span></div>
+          <div id="stats-per-sign"></div>
+        </div>
+        <button class="danger" id="btn-reset-data" style="margin-top:12px;width:100%">🗑 Réinitialiser les données</button>
+      </div>
+    </div>
+
+    <!-- TAB: Train -->
+    <div class="tab-content" id="tab-train">
+      <div class="card">
+        <h3>Entraînement</h3>
+        <p style="font-size:0.82rem;color:var(--muted);margin-bottom:14px;">
+          Lance l'entraînement du MLP (128→64) sur les données collectées.<br>
+          Split automatique 80/20 avec StandardScaler.
+        </p>
+        <button id="btn-train" class="green" style="width:100%">🚀 Lancer l'entraînement</button>
+      </div>
+
+      <div class="card" id="train-log-card">
+        <h3>Logs</h3>
+        <div class="log-box" id="train-log">En attente...</div>
+      </div>
+
+      <div class="card" id="train-results-card" style="display:none">
+        <h3>Résultats</h3>
+        <div class="big-accuracy" id="result-accuracy">—</div>
+        <div style="font-size:0.75rem;color:var(--muted);text-align:center;margin-bottom:12px;">Précision globale (test set)</div>
+        <div class="metric-grid" id="result-per-sign"></div>
+      </div>
+    </div>
+
+    <!-- TAB: Predict -->
+    <div class="tab-content" id="tab-predict">
+      <div class="card">
+        <h3>Mode prédiction</h3>
+        <p style="font-size:0.82rem;color:var(--muted);margin-bottom:14px;">
+          Affiche la prédiction en temps réel depuis la webcam.<br>
+          Seuil de confiance : 70%. Lissage sur 10 frames.
+        </p>
+        <div style="display:flex;gap:8px;">
+          <button id="btn-predict-start" class="green" style="flex:1">▶ Démarrer</button>
+          <button id="btn-predict-stop" class="secondary" style="flex:1" disabled>⏹ Arrêter</button>
+        </div>
+      </div>
+
+      <div class="card" id="model-status-card">
+        <h3>Statut du modèle</h3>
+        <div id="model-status-text" style="font-size:0.85rem;color:var(--muted)">Vérification...</div>
+      </div>
+
+      <div class="card">
+        <h3>Dernière prédiction</h3>
+        <div style="text-align:center;padding:12px 0;">
+          <div id="last-pred-sign" style="font-size:2.5rem;font-weight:800;letter-spacing:-0.04em;color:var(--accent2);">—</div>
+          <div id="last-pred-conf" style="font-size:0.85rem;color:var(--muted);margin-top:4px;"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const API = 'http://localhost:5000';
+
+// ─── State ───────────────────────────────────────────────
+let stream = null;
+let predicting = false;
+let collecting = false;
+let collectTarget = 50;
+let collectCount = 0;
+let collectSign = null;
+let collectInterval = null;
+let predictInterval = null;
+let signs = [];
+let selectedSign = null;
+
+// ─── DOM refs ────────────────────────────────────────────
+const webcam = document.getElementById('webcam');
+const canvas = document.getElementById('canvas-overlay');
+const ctx = canvas.getContext('2d');
+
+// ─── API health ──────────────────────────────────────────
+async function checkHealth() {
+  try {
+    const r = await fetch(`${API}/health`);
+    if (r.ok) {
+      document.getElementById('api-dot').classList.add('online');
+      document.getElementById('api-status').textContent = 'Backend connecté · http://localhost:5000';
+    }
+  } catch {
+    document.getElementById('api-status').textContent = 'Backend inaccessible — vérifier que Docker tourne';
+  }
+}
+
+// ─── Camera ──────────────────────────────────────────────
+document.getElementById('btn-start-cam').onclick = startCamera;
+document.getElementById('btn-stop-cam').onclick = stopCamera;
+
+async function startCamera() {
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } });
+    webcam.srcObject = stream;
+    webcam.onloadedmetadata = () => {
+      canvas.width = webcam.videoWidth;
+      canvas.height = webcam.videoHeight;
+    };
+    document.getElementById('btn-start-cam').disabled = true;
+    document.getElementById('btn-stop-cam').disabled = false;
+    document.getElementById('btn-collect-start').disabled = !selectedSign;
+    document.getElementById('btn-predict-start').disabled = false;
+  } catch (e) {
+    alert('Impossible d\'accéder à la caméra : ' + e.message);
+  }
+}
+
+function stopCamera() {
+  if (stream) stream.getTracks().forEach(t => t.stop());
+  stream = null;
+  stopCollect();
+  stopPredict();
+  document.getElementById('btn-start-cam').disabled = false;
+  document.getElementById('btn-stop-cam').disabled = true;
+  document.getElementById('btn-collect-start').disabled = true;
+  document.getElementById('btn-predict-start').disabled = true;
+  document.getElementById('pred-sign').textContent = '—';
+  document.getElementById('pred-conf').textContent = '';
+  document.getElementById('hand-badge').textContent = 'Aucune main';
+  document.getElementById('hand-badge').classList.remove('detected');
+}
+
+// ─── Capture frame ───────────────────────────────────────
+function captureFrame() {
+  const offscreen = document.createElement('canvas');
+  offscreen.width = webcam.videoWidth;
+  offscreen.height = webcam.videoHeight;
+  const c = offscreen.getContext('2d');
+  c.drawImage(webcam, 0, 0);
+  return offscreen.toDataURL('image/jpeg', 0.8);
+}
+
+// ─── Signs management ────────────────────────────────────
+async function loadSigns() {
+  const r = await fetch(`${API}/signs`);
+  const data = await r.json();
+  signs = data.signs;
+  renderSigns();
+}
+
+function renderSigns() {
+  const container = document.getElementById('signs-chips');
+  container.innerHTML = '';
+  signs.forEach(sign => {
+    const chip = document.createElement('div');
+    chip.className = 'sign-chip' + (sign === selectedSign ? ' selected' : '');
+    chip.innerHTML = `<span>${sign}</span><span class="remove" data-sign="${sign}" title="Supprimer">×</span>`;
+    chip.querySelector('span:first-child').onclick = () => selectSign(sign);
+    chip.querySelector('.remove').onclick = (e) => { e.stopPropagation(); removeSign(sign); };
+    container.appendChild(chip);
+  });
+}
+
+function selectSign(sign) {
+  selectedSign = sign;
+  collectSign = sign;
+  document.getElementById('selected-sign-display').textContent = sign;
+  document.getElementById('btn-collect-start').disabled = !stream;
+  renderSigns();
+}
+
+async function removeSign(sign) {
+  signs = signs.filter(s => s !== sign);
+  await fetch(`${API}/signs`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({signs}) });
+  if (selectedSign === sign) { selectedSign = null; document.getElementById('selected-sign-display').textContent = '—'; }
+  renderSigns();
+}
+
+document.getElementById('btn-add-sign').onclick = async () => {
+  const input = document.getElementById('new-sign-input');
+  const val = input.value.trim().replace(/\s+/g, '_').toLowerCase();
+  if (!val || signs.includes(val)) return;
+  signs.push(val);
+  await fetch(`${API}/signs`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({signs}) });
+  input.value = '';
+  renderSigns();
+};
+
+// ─── Collect ─────────────────────────────────────────────
+document.getElementById('btn-collect-start').onclick = startCollect;
+document.getElementById('btn-collect-stop').onclick = stopCollect;
+
+function startCollect() {
+  if (!stream || !selectedSign) return;
+  collecting = true;
+  collectCount = 0;
+  document.getElementById('collect-progress').style.width = '0%';
+  document.getElementById('collect-count-label').textContent = `0 / ${collectTarget}`;
+  document.getElementById('collecting-indicator').classList.add('active');
+  document.getElementById('btn-collect-start').disabled = true;
+  document.getElementById('btn-collect-stop').disabled = false;
+
+  collectInterval = setInterval(collectFrame, 150); // ~6 fps
+}
+
+function stopCollect() {
+  collecting = false;
+  clearInterval(collectInterval);
+  document.getElementById('collecting-indicator').classList.remove('active');
+  document.getElementById('btn-collect-start').disabled = !stream || !selectedSign;
+  document.getElementById('btn-collect-stop').disabled = true;
+}
+
+async function collectFrame() {
+  if (!collecting) return;
+  const image = captureFrame();
+  try {
+    const r = await fetch(`${API}/collect`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ image, sign: selectedSign })
+    });
+    const data = await r.json();
+    if (r.ok) {
+      collectCount++;
+      const pct = Math.min((collectCount / collectTarget) * 100, 100);
+      document.getElementById('collect-progress').style.width = pct + '%';
+      document.getElementById('collect-count-label').textContent = `${collectCount} / ${collectTarget}`;
+      document.getElementById('collect-status-text').textContent = `Capture : ${selectedSign} (${data.count} total)`;
+      if (collectCount >= collectTarget) {
+        stopCollect();
+        document.getElementById('collect-status-text').textContent = `✓ ${collectTarget} exemples capturés !`;
+        loadDataStats();
+      }
+    } else {
+      document.getElementById('collect-status-text').textContent = `⚠ ${data.error}`;
+    }
+  } catch (e) {
+    document.getElementById('collect-status-text').textContent = '⚠ Erreur réseau';
+  }
+}
+
+async function loadDataStats() {
+  const r = await fetch(`${API}/data/stats`);
+  const data = await r.json();
+  document.getElementById('stat-total').textContent = data.total;
+  const container = document.getElementById('stats-per-sign');
+  container.innerHTML = '';
+  Object.entries(data.per_sign).forEach(([sign, count]) => {
+    const row = document.createElement('div');
+    row.className = 'stat-row';
+    row.innerHTML = `<span>${sign}</span><span class="val">${count}</span>`;
+    container.appendChild(row);
+  });
+}
+
+document.getElementById('btn-reset-data').onclick = async () => {
+  if (!confirm('Supprimer toutes les données collectées ?')) return;
+  await fetch(`${API}/data/reset`, { method: 'DELETE' });
+  loadDataStats();
+};
+
+// ─── Train ───────────────────────────────────────────────
+document.getElementById('btn-train').onclick = async () => {
+  const log = document.getElementById('train-log');
+  const btn = document.getElementById('btn-train');
+  btn.disabled = true;
+  log.textContent = '⏳ Entraînement en cours...\n';
+  document.getElementById('train-results-card').style.display = 'none';
+
+  try {
+    const r = await fetch(`${API}/train`, { method: 'POST' });
+    const data = await r.json();
+
+    if (!r.ok) {
+      log.textContent += `❌ Erreur : ${data.error}\n`;
+    } else {
+      log.textContent += `✓ Entraînement terminé\n`;
+      log.textContent += `  Train : ${data.train_samples} exemples\n`;
+      log.textContent += `  Test  : ${data.test_samples} exemples\n`;
+      log.textContent += `  Précision globale : ${data.accuracy}%\n\n`;
+      Object.entries(data.per_sign).forEach(([sign, m]) => {
+        log.textContent += `  ${sign.padEnd(14)} f1=${m.f1}  support=${m.support}\n`;
+      });
+
+      document.getElementById('result-accuracy').textContent = data.accuracy + '%';
+      const grid = document.getElementById('result-per-sign');
+      grid.innerHTML = '';
+      Object.entries(data.per_sign).forEach(([sign, m]) => {
+        const box = document.createElement('div');
+        box.className = 'metric-box';
+        box.innerHTML = `${sign}<span class="val">${Math.round(m.f1*100)}%</span><span style="font-size:0.7rem;color:var(--muted)">F1</span>`;
+        grid.appendChild(box);
+      });
+      document.getElementById('train-results-card').style.display = 'block';
+      checkModelStatus();
+    }
+  } catch (e) {
+    log.textContent += `❌ Erreur réseau : ${e.message}\n`;
+  }
+  btn.disabled = false;
+};
+
+// ─── Predict ─────────────────────────────────────────────
+document.getElementById('btn-predict-start').onclick = startPredict;
+document.getElementById('btn-predict-stop').onclick = stopPredict;
+
+function startPredict() {
+  if (!stream) return;
+  predicting = true;
+  document.getElementById('btn-predict-start').disabled = true;
+  document.getElementById('btn-predict-stop').disabled = false;
+  document.getElementById('proba-card').style.display = 'block';
+  predictInterval = setInterval(predictFrame, 100); // 10 fps
+}
+
+function stopPredict() {
+  predicting = false;
+  clearInterval(predictInterval);
+  document.getElementById('btn-predict-start').disabled = !stream;
+  document.getElementById('btn-predict-stop').disabled = true;
+  document.getElementById('proba-card').style.display = 'none';
+  document.getElementById('pred-sign').textContent = '—';
+  document.getElementById('pred-conf').textContent = '';
+  document.getElementById('hand-badge').textContent = 'Aucune main';
+  document.getElementById('hand-badge').classList.remove('detected');
+}
+
+async function predictFrame() {
+  if (!predicting) return;
+  const image = captureFrame();
+  try {
+    const r = await fetch(`${API}/predict`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ image })
+    });
+    const data = await r.json();
+
+    const badge = document.getElementById('hand-badge');
+    if (data.hand_detected) {
+      badge.textContent = '✋ Main détectée';
+      badge.classList.add('detected');
+    } else {
+      badge.textContent = 'Aucune main';
+      badge.classList.remove('detected');
+    }
+
+    if (data.sign) {
+      document.getElementById('pred-sign').textContent = data.sign.replace('_', ' ');
+      document.getElementById('pred-conf').textContent = `${data.confidence}% confiance`;
+      document.getElementById('last-pred-sign').textContent = data.sign.replace('_', ' ');
+      document.getElementById('last-pred-conf').textContent = `Confiance : ${data.confidence}%`;
+    } else {
+      document.getElementById('pred-sign').textContent = data.hand_detected ? '?' : '—';
+      document.getElementById('pred-conf').textContent = data.hand_detected ? 'Confiance insuffisante' : '';
+    }
+
+    // Probabilities bar
+    if (data.all_probabilities) {
+      const list = document.getElementById('proba-list');
+      list.innerHTML = '';
+      Object.entries(data.all_probabilities)
+        .sort((a, b) => b[1] - a[1])
+        .forEach(([sign, p]) => {
+          const pct = Math.round(p * 100);
+          list.innerHTML += `
+            <div class="proba-row">
+              <div class="proba-label">
+                <span class="name">${sign}</span>
+                <span class="pct">${pct}%</span>
+              </div>
+              <div class="progress-bar-wrap">
+                <div class="progress-bar-fill" style="width:${pct}%;background:${pct > 70 ? 'var(--green)' : 'var(--accent)'}"></div>
+              </div>
+            </div>`;
+        });
+    }
+  } catch (e) {
+    // Silently ignore network errors during prediction loop
+  }
+}
+
+async function checkModelStatus() {
+  const r = await fetch(`${API}/model/status`);
+  const data = await r.json();
+  const el = document.getElementById('model-status-text');
+  if (data.trained) {
+    el.textContent = '✓ Modèle entraîné et prêt';
+    el.style.color = 'var(--green)';
+  } else {
+    el.textContent = '✗ Aucun modèle — entraîne d\'abord dans l\'onglet Entraîner';
+    el.style.color = 'var(--red)';
+  }
+}
+
+// ─── Tabs ────────────────────────────────────────────────
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.onclick = () => {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+    if (btn.dataset.tab === 'collect') loadDataStats();
+    if (btn.dataset.tab === 'predict') checkModelStatus();
+  };
+});
+
+// ─── Init ────────────────────────────────────────────────
+checkHealth();
+loadSigns();
+loadDataStats();
+checkModelStatus();
+setInterval(checkHealth, 10000);
+</script>
+</body>
+</html>
