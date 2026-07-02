@@ -11,6 +11,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import classification_report, accuracy_score
 from collections import deque
+from flask import send_file
 
 app = Flask(__name__)
 CORS(app)
@@ -74,6 +75,9 @@ def decode_image(b64_string):
 def health():
     return jsonify({"status": "ok"})
 
+@app.route("/")
+def index():
+    return send_file("../frontend/index.html")
 
 @app.route("/signs", methods=["GET"])
 def get_signs():
