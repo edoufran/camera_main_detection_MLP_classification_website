@@ -16,8 +16,9 @@ app = Flask(__name__)
 CORS(app)
 
 # Paths
-DATA_DIR = "/app/data"
-MODEL_DIR = "/app/model"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_DIR = os.path.join(BASE_DIR, "data")
+MODEL_DIR = os.path.join(BASE_DIR, "model")
 os.makedirs(DATA_DIR, exist_ok=True)
 os.makedirs(MODEL_DIR, exist_ok=True)
 
